@@ -80,25 +80,30 @@ def analizar_datos_omop(omop_standardized: pd.DataFrame,
             if 'boolean' in str(data_type).lower():
                 bools = boolean_list(unique_values)
                 omop_resume['% are boolean'] = sum(bools)/len(unique_values)*100 if unique_values.size else 0
-                omop_resume['Numbre of Boolean Values'] = sum(bools)
-                omop_resume['Boolean_type'] = True
+                omop_resume['Number of Boolean Values'] = sum(bools)
+                omop_resume['is_boolean'] = True
                 omop_resume['boolean_formats'] = [unique_values.tolist()]
 
             elif 'varchar' in str(data_type).lower():
-                omop_resume['Text_type'] = True
+                omop_resume['is_text'] = True
                 omop_resume['Used Values'] = [unique_values.tolist()]
                 options = separe_words(str(expected_range)) if expected_range else []
                 all_values = manufacturer_data[col].dropna()
                 valid_count = all_values.isin(options).sum() if options else 0
                 total_count = len(all_values)
-
+                # confirmar si es categorical (corregir rango)
                 omop_resume['% valid varchar'] = (valid_count / total_count) * 100 if total_count else 0
                 omop_resume['Valid varchar count'] = valid_count
                 omop_resume['Total varchar values'] = total_count
+                # TODO CHANGE THIS CRITERIA
+                if len(unique_values.tolist()) > 1 & len(unique_values.tolist()) < 4:
+                    omop_resume['is_categorical'] = True
+                else:
+                    omop_resume['is_categorical'] = False
 
             elif 'date' in str(data_type).lower() or 'datetime' in str(data_type).lower():
                 formats_detected = [analizar_fecha_individual(str(d))[1] for d in unique_values]
-                omop_resume['Date_type'] = True
+                omop_resume['is_date'] = True
                 omop_resume['Date_format'] = [set(formats_detected)]
                 all_same_format = len(set(formats_detected)) == 1
                 all_valid_format = all(fmt != 'NO_MATCH' for fmt in formats_detected)
@@ -107,10 +112,11 @@ def analizar_datos_omop(omop_standardized: pd.DataFrame,
             elif 'numeric' in str(data_type).lower() or 'integer' in str(data_type).lower():
                 try:
                     numeric_values = pd.to_numeric(manufacturer_data[col].dropna())
-                    omop_resume['Numeric_type'] = True
-                    omop_resume['Numbre of Numeric Values'] = len(numeric_values)
-                    omop_resume['Min'] = numeric_values.min()
-                    omop_resume['Max'] = numeric_values.max()
+                    if len(numeric_values) > 0:
+                        omop_resume['is_numeric'] = True
+                        omop_resume['Number of Numeric Values'] = len(numeric_values)
+                        omop_resume['Min'] = numeric_values.min()
+                        omop_resume['Max'] = numeric_values.max()
 
                     if expected_range and ('–' in str(expected_range) or '-' in str(expected_range)):
                         range_str = expected_range.split()[0]
@@ -129,3 +135,39 @@ def analizar_datos_omop(omop_standardized: pd.DataFrame,
             omop_data_info.append(omop_resume)
 
     return pd.concat(omop_data_info, ignore_index=True)
+
+
+def normalize_columns(df: pd.DataFrame, columns: List[str], method="minmax") -> pd.DataFrame:
+    df_norm = df.copy()
+    for col in columns:
+        # Convertir a numérico, forzar errores en NaN para valores no numéricos
+        series_num = pd.to_numeric(df[col], errors='coerce')
+
+        # Detectar valores que no se convirtieron a numérico (son NaN pero originalmente no eran NaN)
+        no_normalizados = df[col][series_num.isna() & df[col].notna()]
+
+        # Imprimir los valores no normalizados
+        if not no_normalizados.empty:
+            print(f"Valores no normalizados en la columna '{col}':")
+            print(no_normalizados.tolist())
+
+        # Reemplazar en el DataFrame con la serie numérica
+        df_norm[col] = series_num
+
+        if method == "minmax":
+            min_val = series_num.min(skipna=True)
+            max_val = series_num.max(skipna=True)
+            if min_val != max_val:
+                df_norm[f"{col}_norm"] = (series_num - min_val) / (max_val - min_val)
+            else:
+                df_norm[f"{col}_norm"] = 0
+        elif method == "zscore":
+            mean = series_num.mean(skipna=True)
+            std = series_num.std(skipna=True)
+            if std != 0:
+                df_norm[f"{col}_zscore"] = (series_num - mean) / std
+            else:
+                df_norm[f"{col}_zscore"] = 0
+
+    return df_norm
+
