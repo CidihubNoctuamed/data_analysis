@@ -4,3 +4,5 @@
 OMOP_fields_merged.csv
 
 omop_data_info.csv
+
+__pycache__/
