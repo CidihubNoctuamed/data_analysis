@@ -15,7 +15,7 @@ def get_data_path(local_path, s3_data_input_parh=None):
         Path: Ruta de datos seleccionada
     """
     # Verificar si estamos en SageMaker
-    if 'SAGEMAKER_NOTEBOOK_INSTANCE_NAME' in os.environ:
+    if 'SAGEMAKER_SPACE_NAME' in os.environ:
         # Usar ruta de SageMaker si está definida
         return s3_data_input_parh if s3_data_input_parh else local_path
 
